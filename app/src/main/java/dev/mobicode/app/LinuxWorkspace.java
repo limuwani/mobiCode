@@ -125,7 +125,7 @@ final class LinuxWorkspace {
             Files.createFile(root.resolve(".mobicode-toolchain"));
         }
         service.step("Preparing your first project", "");
-        try (InputStream input = context.getAssets().open("workspace-starter.tar.gz")) {
+        try (InputStream input = context.getResources().openRawResource(R.raw.workspace_starter)) {
             WorkspaceFiles.unpack(input, root.resolve("root"), "", true);
         }
         runSetupCommand(SERVER + " --config " + CONFIG + " --user-data-dir " + DATA + "/editor "

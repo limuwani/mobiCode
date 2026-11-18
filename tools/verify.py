@@ -3,6 +3,7 @@
 import io
 import json
 import pathlib
+import sys
 import tarfile
 import xml.etree.ElementTree as ET
 import zipfile
@@ -12,7 +13,8 @@ for file in (root / 'app/src/main').rglob('*.xml'):
     ET.parse(file)
 for file in [root / 'agent/package.json', root / 'runtime/settings.json', root / 'runtime/starter/.vscode/tasks.json']:
     json.loads(file.read_text())
-with tarfile.open(root / 'app/src/main/assets/workspace-starter.tar.gz', mode='r:gz') as archive:
+starter = root / 'app/src/main/res/raw/workspace_starter.bin'
+with tarfile.open(starter, mode='r:gz') as archive:
     names = archive.getnames()
     assert all(not name.startswith('/') and '..' not in pathlib.PurePosixPath(name).parts for name in names)
     for name in ['.local/share/mobicode/mobiCode-agent.vsix', 'Projects/mobiCode-starter/main.cpp', 'Projects/mobiCode-starter/.vscode/tasks.json']:
@@ -26,4 +28,7 @@ with tarfile.open(root / 'app/src/main/assets/workspace-starter.tar.gz', mode='r
         assert manifest['main'] == './src/extension.js'
         assert 'extension/src/extension.js' in vsix.namelist()
         assert manifest['extensionKind'] == ['workspace']
+if len(sys.argv) == 2:
+    with zipfile.ZipFile(sys.argv[1]) as apk:
+        assert apk.read('res/raw/workspace_starter.bin') == starter.read_bytes(), 'Starter project payload missing from APK'
 print('Verified Android XML, extension manifest and embedded starter workspace.')

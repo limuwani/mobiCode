@@ -9,4 +9,4 @@ dist/
 node_modules/
 .DS_Store
 app/src/main/jniLibs/
-app/src/main/assets/workspace-starter.tar.gz
+app/src/main/res/raw/workspace_starter.bin

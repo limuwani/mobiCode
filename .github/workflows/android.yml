@@ -49,6 +49,7 @@ jobs:
             -PciVersionCode="${GITHUB_RUN_NUMBER}" \
             -PciVersionName="0.2.0-alpha.${GITHUB_RUN_NUMBER}"
           cp app/build/outputs/apk/debug/app-debug.apk dist/mobiCode.apk
+          python3 tools/verify.py dist/mobiCode.apk
           cd dist
           sha256sum mobiCode.apk mobiCode-agent.vsix mobiCode-native-sources.zip > SHA256SUMS
       - name: Enable Android emulator acceleration
