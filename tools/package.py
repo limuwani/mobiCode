@@ -55,7 +55,9 @@ def package():
     with gzip.GzipFile(fileobj=compressed, mode='wb', mtime=0, filename='') as zipped:
         zipped.write(tar_bytes.getvalue())
     payload = compressed.getvalue()
-    (ROOT / 'app/src/main/assets/workspace-starter.tar.gz').write_bytes(payload)
+    destination = ROOT / 'app/src/main/assets/workspace-starter.tar.gz'
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(payload)
     print(f'Packaged agent ({len(vsix):,} bytes) and starter workspace ({len(payload):,} bytes).')
 
 
