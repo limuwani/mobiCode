@@ -205,7 +205,8 @@ public final class WorkspaceService extends Service {
         State previous = state;
         state = update;
         long now = SystemClock.elapsedRealtime();
-        if (previous.phase != update.phase || now - lastNotification >= 1000) {
+        // Android 13+ shows the service in its task manager without a notification prompt.
+        if (Build.VERSION.SDK_INT < 33 && (previous.phase != update.phase || now - lastNotification >= 1000)) {
             lastNotification = now;
             getSystemService(NotificationManager.class).notify(NOTIFICATION, notification(update));
         }

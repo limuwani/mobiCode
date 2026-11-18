@@ -4,6 +4,11 @@ import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.os.Build;
+import android.util.Base64;
+
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -16,6 +21,8 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.security.KeyStore;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -128,8 +135,10 @@ final class LinuxWorkspace {
 
     private void prepareGuest() throws Exception {
         refreshDns();
+        configurePackageDownloads();
         write(root.resolve("etc/apt/apt.conf.d/99mobicode"), "APT::Sandbox::User \"root\";\n"
                 + "Acquire::http::Pipeline-Depth \"0\";\nAcquire::PDiffs \"false\";\n"
+                + "Acquire::https::CaInfo \"/etc/mobicode/package-roots.pem\";\n"
                 + "Acquire::http::Timeout \"30\";\nAcquire::https::Timeout \"30\";\n"
                 + "DPkg::Options { \"--force-confold\"; };\n");
         write(root.resolve("usr/sbin/policy-rc.d"), "#!/bin/sh\nexit 101\n");
@@ -149,6 +158,26 @@ final class LinuxWorkspace {
         if (!Files.exists(root.resolve("dev/ptmx"), LinkOption.NOFOLLOW_LINKS)) {
             android.system.Os.symlink("pts/ptmx", root.resolve("dev/ptmx").toString());
         }
+    }
+
+    private void configurePackageDownloads() throws Exception {
+        // Ubuntu Base may not have its certificate package installed yet.
+        TrustManagerFactory factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        factory.init((KeyStore) null);
+        StringBuilder certificates = new StringBuilder();
+        for (TrustManager manager : factory.getTrustManagers()) {
+            if (!(manager instanceof X509TrustManager)) continue;
+            for (X509Certificate certificate : ((X509TrustManager) manager).getAcceptedIssuers()) {
+                certificates.append("-----BEGIN CERTIFICATE-----\n")
+                        .append(Base64.encodeToString(certificate.getEncoded(), Base64.DEFAULT))
+                        .append("-----END CERTIFICATE-----\n");
+            }
+        }
+        if (certificates.length() == 0) throw new IOException("Android has no trust roots for the tool downloads.");
+        write(root.resolve("etc/mobicode/package-roots.pem"), certificates.toString());
+        Path sources = root.resolve("etc/apt/sources.list.d/ubuntu.sources");
+        String entries = new String(Files.readAllBytes(sources), StandardCharsets.UTF_8);
+        write(sources, entries.replace("URIs: http://", "URIs: https://"));
     }
 
     private void refreshDns() throws Exception {
