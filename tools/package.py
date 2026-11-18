@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Build a reproducible VSIX and self-contained Termux installer, without npm dependencies."""
-import base64
+"""Build a reproducible VSIX and first-project archive for Android."""
 import gzip
 import io
 import json
 import pathlib
 import tarfile
-import textwrap
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -40,10 +38,13 @@ def package():
     vsix = vsix_bytes.getvalue()
     (DIST / 'mobiCode-agent.vsix').write_bytes(vsix)
 
-    files = {'mobiCode-agent.vsix': vsix}
-    for file in sorted((ROOT / 'runtime').rglob('*')):
-        if file.is_file() and file.name != 'install-template.sh':
-            files[str(file.relative_to(ROOT / 'runtime'))] = file.read_bytes()
+    state = '.local/share/mobicode'
+    files = {f'{state}/mobiCode-agent.vsix': vsix,
+             f'{state}/editor/User/settings.json': (ROOT / 'runtime/settings.json').read_bytes()}
+    for file in sorted((ROOT / 'runtime/starter').rglob('*')):
+        if file.is_file():
+            relative = file.relative_to(ROOT / 'runtime/starter').as_posix()
+            files[f'Projects/mobiCode-starter/{relative}'] = file.read_bytes()
     tar_bytes = io.BytesIO()
     with tarfile.open(fileobj=tar_bytes, mode='w') as archive:
         for name, content in sorted(files.items()):
@@ -53,14 +54,9 @@ def package():
     compressed = io.BytesIO()
     with gzip.GzipFile(fileobj=compressed, mode='wb', mtime=0, filename='') as zipped:
         zipped.write(tar_bytes.getvalue())
-    installer = (ROOT / 'runtime/install-template.sh').read_text().rstrip() + '\n__MOBICODE_PAYLOAD__\n'
-    installer += '\n'.join(textwrap.wrap(base64.b64encode(compressed.getvalue()).decode(), 76)) + '\n'
-    encoded = installer.encode()
-    if len(base64.b64encode(encoded)) > 120000:
-        raise ValueError('Installer exceeds the Android shell argument limit.')
-    (DIST / 'mobiCode-setup.sh').write_bytes(encoded)
-    (ROOT / 'app/src/main/assets/mobiCode-setup.sh').write_bytes(encoded)
-    print(f'Packaged agent ({len(vsix):,} bytes) and installer ({len(encoded):,} bytes).')
+    payload = compressed.getvalue()
+    (ROOT / 'app/src/main/assets/workspace-starter.tar.gz').write_bytes(payload)
+    print(f'Packaged agent ({len(vsix):,} bytes) and starter workspace ({len(payload):,} bytes).')
 
 
 if __name__ == '__main__':

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Validate shipped payloads, resource XML and extension manifests."""
-import base64
 import io
 import json
 import pathlib
@@ -13,15 +12,12 @@ for file in (root / 'app/src/main').rglob('*.xml'):
     ET.parse(file)
 for file in [root / 'agent/package.json', root / 'runtime/settings.json', root / 'runtime/starter/.vscode/tasks.json']:
     json.loads(file.read_text())
-installer = (root / 'app/src/main/assets/mobiCode-setup.sh').read_bytes()
-assert installer == (root / 'dist/mobiCode-setup.sh').read_bytes()
-payload = installer.split(b'\n__MOBICODE_PAYLOAD__\n', 1)[1]
-with tarfile.open(fileobj=io.BytesIO(base64.b64decode(payload)), mode='r:gz') as archive:
+with tarfile.open(root / 'app/src/main/assets/workspace-starter.tar.gz', mode='r:gz') as archive:
     names = archive.getnames()
     assert all(not name.startswith('/') and '..' not in pathlib.PurePosixPath(name).parts for name in names)
-    for name in ['mobiCode-agent.vsix', 'starter/main.cpp', 'starter/.vscode/tasks.json', 'start.sh']:
+    for name in ['.local/share/mobicode/mobiCode-agent.vsix', 'Projects/mobiCode-starter/main.cpp', 'Projects/mobiCode-starter/.vscode/tasks.json']:
         assert name in names
-    data = archive.extractfile('mobiCode-agent.vsix').read()
+    data = archive.extractfile('.local/share/mobicode/mobiCode-agent.vsix').read()
     assert data == (root / 'dist/mobiCode-agent.vsix').read_bytes()
     with zipfile.ZipFile(io.BytesIO(data)) as vsix:
         ET.fromstring(vsix.read('extension.vsixmanifest'))
@@ -30,4 +26,4 @@ with tarfile.open(fileobj=io.BytesIO(base64.b64decode(payload)), mode='r:gz') as
         assert manifest['main'] == './src/extension.js'
         assert 'extension/src/extension.js' in vsix.namelist()
         assert manifest['extensionKind'] == ['workspace']
-print('Verified Android XML, extension manifest, embedded installer and starter workspace.')
+print('Verified Android XML, extension manifest and embedded starter workspace.')

@@ -3,9 +3,10 @@
 Use JDK 17, Android SDK 35, Node 22 and Python 3. The project has no npm runtime
 dependencies. Follow the build commands in the README.
 
-When editing `agent/` or `runtime/`, run `python3 tools/package.py` and commit the
-updated `app/src/main/assets/mobiCode-setup.sh` with the source changes. Run Node
-tests and `python3 tools/verify.py`, then build and lint the Android module.
+When editing `agent/` or `runtime/`, run `python3 tools/package.py` to regenerate
+the bundled asset. Run the Node tests and `python3 tools/verify.py`, then build
+and lint the Android module. Changes to first launch should also pass the
+Android emulator setup test in the Actions workflow.
 
 For device reports, include your tablet model, HarmonyOS/Android version, WebView
 version, input method and whether a physical keyboard was connected. Never include

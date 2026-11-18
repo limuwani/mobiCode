@@ -1,24 +1,16 @@
-This is the first mobiCode Android development preview.
+## One-button setup
 
-Download **mobiCode.apk**, install it directly on the tablet, and follow the three
-setup steps. Install Termux from its official F-Droid page first. A standalone
-**mobiCode-setup.sh** installer and **mobiCode-agent.vsix** are also included.
+Download **mobiCode.apk**, open it on your tablet, then tap **Download and set up**
+inside mobiCode. The app prepares its own Ubuntu workspace, installs C++, Java,
+Python and Git, and opens the local editor. Use Wi-Fi for the first download
+and keep about 2 GB free. After setup, the editor and installed tools work offline.
 
-Implemented: local code-server editor, native tablet shortcuts, real terminals,
-Git, C++ and Python setup, optional Java, web preview, extension access, and a
-provider-configurable AI chat/agent with file diffs and reviewed shell commands.
+This alpha supports arm64 and x86_64 Android devices. The automated build checks
+a clean installation on an Android 12 emulator. The Huawei MatePad still needs
+a physical device test.
 
-The APK is built and linted in GitHub Actions; agent tests and payload checks run
-before publication. This does not replace testing on a physical tablet.
+The app includes the terminal, compatible extensions and the configurable AI
+agent. A remote AI provider requires its own configuration and may charge for use.
 
-Known limits:
-
-- First target: Huawei MatePad 11.5 PaperMatte with HarmonyOS 4.3; device validation
-  is still needed. Touch typing and keyboard shortcuts need real-device checks.
-- Termux is a separate dependency and must remain running for local execution.
-- Some VS Code extensions and native dependencies are incompatible with Android.
-- AI requires your own compatible provider/model and optionally an API key.
-- Debug/development signing is used for alpha APKs. Reinstallation may be needed
-  between builds; save files first. Stable release signing is not configured yet.
-
-Check **SHA256SUMS** to verify the downloaded assets.
+If Android reports a signature conflict with the 0.1 preview, uninstall the
+older mobiCode APK first. Projects previously made in Termux remain there.

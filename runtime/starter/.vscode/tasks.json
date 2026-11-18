@@ -3,7 +3,7 @@
   "tasks": [
     {
       "label": "C++: build and run", "type": "shell",
-      "command": "clang++ -std=c++17 main.cpp -o main && ./main",
+      "command": "g++ -std=c++17 main.cpp -o main && ./main",
       "group": { "kind": "build", "isDefault": true }, "problemMatcher": "$gcc"
     },
     { "label": "Python: run", "type": "shell", "command": "python hello.py", "problemMatcher": [] },

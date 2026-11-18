@@ -1,45 +1,34 @@
 # Architecture
 
-mobiCode is a native Android client for a code-server workbench running locally
-inside Termux. It is not a fork of the entire Code-OSS repository. The first
-release reuses the editor and extension host so terminals, Git and project files
-have real operating-system backing.
+mobiCode creates a private Ubuntu workspace within its Android app storage.
+The APK contains the PRoot launcher. First launch downloads Ubuntu Base and
+the code-server archive from their upstream sources and checks their pinned
+SHA-256 hashes. The Ubuntu package manager verifies its signed package
+metadata and installs the language tools inside the workspace.
 
-| Component | Responsibility |
+| Component | Role |
 | --- | --- |
-| Android activity | Setup, process-launch requests, native keys, WebView and document picker |
-| Termux | User-space environment, compiler packages, Git, Node and shell |
-| code-server | Workbench, extension host, terminal PTYs and authentication |
-| mobiCode extension | AI provider transport, file tools, diff review and command execution |
+| Android activity | Setup, WebView editor, touch shortcuts and file picker |
+| Workspace service | Resumable setup, progress, editor lifecycle and automatic local sign-in |
+| PRoot and Ubuntu | Local shell, compilers, Git and Linux extension host |
+| code-server | Project workbench, terminal PTYs and extension installation |
+| mobiCode agent | Provider requests, project file tools and review of edits and commands |
 
-The Android app uses Termux's documented `RUN_COMMAND` intent. It never injects
-a privileged JavaScript bridge into the editor. HTTP is permitted only for
-loopback domains in the Android network policy. The engine binds to loopback
-and requires a generated password. External editor links open in the browser.
+Archives are expanded in a staging directory and moved into place after
+extraction. Files and directories are checked before writing, and extraction
+does not follow symlinks. Installation uses a private workspace directory and
+keeps verified stages on retry. Ubuntu's package database remains available
+for future updates.
 
-The AI extension has no npm runtime dependencies. File tools reject traversal,
-escaping symlinks, common credential paths, binary files and files over 96 KB.
-This is a file-tool boundary, not a sandbox for approved shell commands. A shell
-command has the Termux user's permissions and can access that user's files.
-Commands require an explicit user decision, have a 30-second timeout and bounded
-output, and their process group is stopped on cancellation.
+The editor binds only to Android loopback on a randomly chosen port. A new
+password protects each session and the Android app signs in using the local
+login endpoint, then passes the session cookie to the WebView. The editor has
+no native JavaScript bridge.
 
-The provider endpoint must use HTTPS, except for localhost model servers. Keys
-are stored with VS Code's SecretStorage rather than in settings or webview HTML.
-Transport does not follow redirects with credentials. Agent UI renders responses
-as text nodes under a restrictive Content Security Policy.
+Agent file tools are limited to the open project and reject common credential
+paths. Reviewed shell commands run with the workspace's permissions. Provider
+keys use the editor's secret storage and are scoped to their endpoint.
 
-## Upstream references
-
-- https://coder.com/docs/code-server/termux
-- https://github.com/termux/termux-app/wiki/RUN_COMMAND-Intent
-- https://code.visualstudio.com/api/extension-guides/webview
-- https://code.visualstudio.com/api/references/vscode-api
-- https://code.visualstudio.com/docs/supporting/faq
-
-## Next engineering work
-
-Test the APK and IME behaviour on the target tablet; add integration coverage for
-VS Code diff/apply flows; establish stable production signing; improve native
-touch editing and split panes; evaluate a Linux userspace option for extensions
-that cannot run directly in Termux. Do not advertise universal extension support.
+- [Ubuntu Base](https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/)
+- [code-server standalone builds](https://coder.com/docs/code-server/install#standalone-releases)
+- [PRoot for Android](https://github.com/termux/proot)

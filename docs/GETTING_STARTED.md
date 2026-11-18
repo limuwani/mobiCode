@@ -1,89 +1,35 @@
-# Get started on your MatePad
+# Start coding with mobiCode
 
-## 1. Install the app and terminal
+1. Download **mobiCode.apk** from [Releases](https://github.com/limuwani/mobiCode/releases).
+   Open the file on your tablet and approve the Android installation prompt.
+2. Open mobiCode and tap **Download and set up**. Use Wi-Fi and keep about 2 GB
+   of storage free. The editor opens automatically when setup finishes.
 
-Download `mobiCode.apk` from the repository's Releases page. Install it directly
-on the tablet. If Huawei asks whether your browser or Files may install this APK,
-allow that installation. No Google Play account is needed by mobiCode.
+The app installs the local workspace, editor, C++, Java, Python and Git. It
+starts the editor again when you next open mobiCode. You can pause setup or
+tap **Try again** after a connection failure. Verified downloads and completed
+installation stages are reused.
 
-Install Termux directly from https://f-droid.org/en/packages/com.termux/ and open
-it once so it can initialize. The two apps must run directly on the same device;
-do not install one inside GBox and the other outside it.
+## Run your first project
 
-## 2. Enable the connection
+Tap **Run task** to compile and run the bundled C++ example. Use **Terminal →
+Run Task** to run Python, Java or the web preview. Create or clone projects in
+`~/Projects` and open them with **File → Open Folder**. The workspace belongs to
+mobiCode. Export or push projects to Git before uninstalling the app.
 
-Open mobiCode. Tap **Copy connection command** in step 2. Paste and run it in
-Termux. It enables Termux's `allow-external-apps` option so mobiCode can launch
-commands. When mobiCode requests **Run commands in Termux**, grant it. You can
-revoke this permission later in Android's app settings.
+## Configure AI
 
-## 3. Install the coding engine
+Tap **Agent → Provider** and enter your provider's compatible chat-completions
+base URL, model ID and optional API key. Agent mode needs a model that supports
+tool calls. Included code and command output are sent to your provider.
 
-Tap **Install engine**. Termux downloads code-server, Git, Clang, Python and their
-dependencies. Leave it open until setup finishes. The installer prints a random
-password for the local editor. Copy that password, switch back to mobiCode, tap
-**Workspace**, and enter it on the editor login page.
+The agent shows a diff before applying an edit and asks before running a
+command in the workspace. Save edits before running them. A remote provider
+can charge for usage.
 
-The service listens only on `127.0.0.1:8765`. Projects are stored under
-`~/Projects` in Termux, separately from mobiCode's Android app data. Keep Termux
-running while you work. If Huawei stops it in the background, adjust the device's
-app-launch/battery settings for Termux using the controls available on your build.
+## Updating from the original preview
 
-## Run code
-
-The initial workspace contains `main.cpp`, `hello.py`, `Hello.java` and
-`index.html`. See its README for commands. Tap **Run task** for the default C++
-build, or use **Terminal → Run Task** for the other examples.
-
-Java is optional:
-
-```sh
-bash ~/.local/share/mobicode/install-java.sh
-```
-
-Restart the engine from mobiCode's home screen, or run:
-
-```sh
-bash ~/.local/share/mobicode/start.sh
-```
-
-To see the local login password again:
-
-```sh
-sed -n 's/^password: //p' ~/.config/mobicode/config.yaml
-```
-
-## AI setup
-
-Tap **Agent → Provider**. Enter a compatible chat-completions API base URL, model
-ID and optional API key. Your provider's own documentation specifies these values.
-No key is shipped in the app. Keys use the extension host's secret storage and
-are scoped to the endpoint, so changing endpoints does not forward an old key.
-
-Chat mode answers questions. Agent mode can read/list text files in the first
-open project, propose edits through a diff and ask to run a shell command. Save
-accepted edits before asking it to compile or execute them. The **Stop** button
-cancels the request or running command; changes you already accepted remain.
-
-Conversation and included code/command output go to your chosen provider.
-Remote AI generally needs internet and may have a separate usage charge.
-
-## If automatic setup cannot start
-
-Use **Menu → Export setup script** and save `mobiCode-setup.sh` in Downloads.
-In Termux, run `termux-setup-storage`, grant storage access and then:
-
-```sh
-bash "$HOME/storage/downloads/mobiCode-setup.sh"
-```
-
-You can also use the standalone installer from the GitHub release. If the native
-WebView has a keyboard or rendering issue, **Menu → Open workspace in browser**
-opens the same local editor and files. This does not require another computer.
-
-## Alpha updates
-
-The first alpha APKs use development/debug signing. A later CI build may have a
-different development key, so an update can require uninstalling the previous
-mobiCode app first. This resets the app's login/session data; projects in Termux
-remain. Save your files before doing so. Stable production signing is future work.
+The alpha builds use development signing. If Android reports that the earlier
+APK has a different signature, uninstall mobiCode 0.1 and install this APK.
+Projects created in the older Termux setup live in Termux. Export those files
+and import them through the editor to use them in the new workspace.

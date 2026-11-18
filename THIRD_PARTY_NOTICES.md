@@ -1,18 +1,19 @@
 # Third-party notices
 
-mobiCode code and the supplied logo asset: MIT, copyright 2026 Limuwani Nethananni.
+The mobiCode code and supplied logo use the MIT licence. Copyright 2026
+Limuwani Nethananni.
 
-The Gradle wrapper scripts and JAR come unmodified from Gradle v8.11.1:
-https://github.com/gradle/gradle/tree/v8.11.1/gradle/wrapper
+The Gradle wrapper is from [Gradle v8.11.1](https://github.com/gradle/gradle/tree/v8.11.1/gradle/wrapper)
+under Apache-2.0. See `gradle/LICENSE-APACHE-2.0.txt`.
 
-They are distributed under Apache License 2.0:
-https://www.apache.org/licenses/LICENSE-2.0
-The full licence is included as `gradle/LICENSE-APACHE-2.0.txt`.
+The APK aggregates the Termux builds of PRoot 5.1.107.102, talloc 2.5.0 and
+libandroid-shmem 0.7. The authors' licence texts and sources are included in
+`mobiCode-native-sources.zip` alongside the APK. PRoot's executable references
+a shortened talloc library name to match Android APK packaging. See
+`tools/native_runtime.py` for the exact packages and the packaging transformation.
+Upstream build recipes come from the pinned
+[Termux package source](https://github.com/termux/termux-packages/tree/84e2a370eb92898242d4ef956f22931280131460).
 
-Termux, code-server, Code-OSS and compiler/runtime packages are installed from
-their own upstream distribution channels, retain their respective licences and
-are not bundled into the Android APK by this repository. Extensions installed by
-the user have their own licences and compatibility requirements.
-
-mobiCode does not include Microsoft proprietary VS Code branding, a licence for
-Visual Studio Marketplace access or any paid AI subscription.
+Archive extraction uses [Apache Commons Compress 1.28.0](https://commons.apache.org/proper/commons-compress/)
+under Apache-2.0. Ubuntu, code-server, and language packages are downloaded from
+their upstream distributors during setup and keep their own licences.

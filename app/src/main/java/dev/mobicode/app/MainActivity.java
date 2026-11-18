@@ -1,13 +1,10 @@
 package dev.mobicode.app;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Intent;
-import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -16,13 +13,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
-import android.provider.Settings;
-import android.util.Base64;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.URLUtil;
@@ -38,25 +32,21 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Native tablet controls around a local, password-protected code-server workspace. */
 public final class MainActivity extends Activity {
-    private static final String ENGINE = "http://127.0.0.1:8765";
-    private static final String TERMUX_PERMISSION = "com.termux.permission.RUN_COMMAND";
-    private static final String TERMUX_HOME = "/data/data/com.termux/files/home";
-    private static final int CONTROL_PERMISSION = 10, UPLOAD = 11, DOWNLOAD = 12, EXPORT = 13;
+    private static final int UPLOAD = 11, DOWNLOAD = 12;
     private static final int BG = Color.rgb(16, 21, 29), CARD = Color.rgb(24, 31, 42);
     private static final int FG = Color.rgb(235, 240, 247), MUTED = Color.rgb(153, 168, 187);
     private static final int ACCENT = Color.rgb(56, 216, 190);
@@ -66,16 +56,19 @@ public final class MainActivity extends Activity {
     private LinearLayout root, shortcuts;
     private FrameLayout content;
     private ScrollView home;
-    private TextView status;
-    private boolean inEditor, resumed, probing;
+    private TextView status, setupTitle, setupDetail;
+    private Button setupButton, stopSetup, workspaceButton;
+    private ProgressBar progress;
+    private boolean inEditor, resumed, autoOpen = true, autoStarted;
+    private String activeUrl, pendingDownload, pendingCookie, pendingUserAgent;
+    private WorkspaceService.State observed;
     private ValueCallback<Uri[]> uploadCallback;
-    private String pendingDownload, pendingCookie, pendingUserAgent, pendingCommand;
 
     private final Runnable poll = new Runnable() {
         @Override public void run() {
             if (!resumed) return;
-            probeEngine(null);
-            handler.postDelayed(this, 5000);
+            renderWorkspaceState();
+            handler.postDelayed(this, 450);
         }
     };
 
@@ -93,6 +86,8 @@ public final class MainActivity extends Activity {
         buildEditor();
         buildShortcuts();
         showHome();
+        autoOpen = true;
+        observed = null;
     }
 
     private void buildToolbar() {
@@ -107,10 +102,11 @@ public final class MainActivity extends Activity {
         TextView name = text("mobiCode", 20, FG);
         name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
-        row.addView(button("Workspace", v -> openWorkspace()));
+        workspaceButton = button("Workspace", v -> requestWorkspace());
+        row.addView(workspaceButton);
         row.addView(button("Menu", v -> showMenu()));
         root.addView(row, new LinearLayout.LayoutParams(-1, dp(62)));
-        status = text("Checking local engine…", 12, MUTED);
+        status = text("On-device workspace", 12, MUTED);
         status.setPadding(dp(18), 0, dp(18), dp(9));
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(status);
@@ -119,54 +115,55 @@ public final class MainActivity extends Activity {
     private void buildHome() {
         home = new ScrollView(this);
         home.setFillViewport(true);
-        LinearLayout page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(24), dp(24), dp(24), dp(32));
-        home.addView(page);
-        TextView label = text("YOUR WORKSPACE, WITH YOU", 12, ACCENT);
-        label.setLetterSpacing(0.12f);
-        page.addView(label);
-        TextView headline = text("Big ideas.\nAny screen.", 42, FG);
-        headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        headline.setPadding(0, dp(12), 0, dp(14));
-        page.addView(headline);
-        page.addView(text("Your projects, a real terminal and an AI agent — on your tablet.\nSet up the local engine once, then code without a laptop.", 16, MUTED));
+        FrameLayout page = new FrameLayout(this);
+        page.setPadding(dp(24), dp(28), dp(24), dp(28));
+        home.addView(page, new ScrollView.LayoutParams(-1, -2));
 
-        LinearLayout first = card(page, "01", "Install Termux", "Install Termux directly on your tablet from its official F-Droid page, then open it once. Install mobiCode directly too; GBox is not needed.");
-        first.addView(button("Get Termux", v -> external("https://f-droid.org/en/packages/com.termux/")));
-        first.addView(button("Open Termux", v -> openTermux()));
-
-        LinearLayout second = card(page, "02", "Connect your tools", "Allow mobiCode to start the engine through Termux. Copy this small settings command, open Termux and paste it there. This gives mobiCode permission to run commands in your Termux environment.");
-        second.addView(button("Copy connection command", v -> {
-            copy("Termux connection", controlCommand());
-            openTermux();
-        }));
-
-        LinearLayout third = card(page, "03", "Build your workspace", "Downloads the editor, Git, a C++ compiler and Python. Keep Termux open while installation runs. Your password appears there. Switch back here afterwards and tap Workspace.");
-        third.addView(button("Install engine", v -> installEngine()));
-        third.addView(button("Start installed engine", v -> runTermux("bash \"$HOME/.local/share/mobicode/start.sh\"")));
-        page.addView(text("FIRST RELEASE · ALPHA\nCompatible extensions vary on Android. AI needs a provider endpoint and model; paid usage is separate. Keep projects in Termux’s home directory so Git and file permissions work correctly.", 12, MUTED));
-        content.addView(home, new FrameLayout.LayoutParams(-1, -1));
-    }
-
-    private LinearLayout card(LinearLayout page, String number, String title, String description) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(20), dp(18), dp(20), dp(16));
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(CARD);
-        shape.setCornerRadius(dp(16));
-        shape.setStroke(dp(1), Color.rgb(39, 50, 65));
-        card.setBackground(shape);
-        LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-1, -2);
-        layout.topMargin = dp(20);
-        layout.bottomMargin = dp(6);
-        page.addView(card, layout);
-        card.addView(text(number + "  /  " + title, 19, FG));
-        TextView body = text(description, 14, MUTED);
-        body.setPadding(0, dp(10), 0, dp(12));
-        card.addView(body);
-        return card;
+        card.setPadding(dp(26), dp(24), dp(26), dp(22));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(CARD);
+        background.setCornerRadius(dp(22));
+        background.setStroke(dp(1), Color.rgb(48, 60, 78));
+        card.setBackground(background);
+        page.addView(card, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+        page.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            int width = Math.min(dp(520), right - left - dp(48));
+            if (width > 0 && card.getLayoutParams().width != width) {
+                card.getLayoutParams().width = width;
+                card.requestLayout();
+            }
+        });
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.brand_logo);
+        card.addView(logo, new LinearLayout.LayoutParams(dp(68), dp(68)));
+        setupTitle = text("Set up your workspace", 29, FG);
+        setupTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        setupTitle.setPadding(0, dp(4), 0, dp(10));
+        card.addView(setupTitle);
+        setupDetail = text("", 15, MUTED);
+        setupDetail.setPadding(0, 0, 0, dp(14));
+        setupDetail.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        card.addView(setupDetail);
+        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setMax(100);
+        progress.setIndeterminateTintList(ColorStateList.valueOf(ACCENT));
+        progress.setProgressTintList(ColorStateList.valueOf(ACCENT));
+        progress.setContentDescription("Workspace setup progress");
+        card.addView(progress, new LinearLayout.LayoutParams(-1, dp(12)));
+        setupButton = button("Download and set up", v -> requestWorkspace());
+        setupButton.setTextColor(BG);
+        setupButton.setTextSize(15);
+        setupButton.setBackgroundTintList(ColorStateList.valueOf(ACCENT));
+        LinearLayout.LayoutParams action = new LinearLayout.LayoutParams(-1, dp(54));
+        action.topMargin = dp(12);
+        card.addView(setupButton, action);
+        stopSetup = button("Pause setup", v -> stopWorkspace());
+        card.addView(stopSetup, new LinearLayout.LayoutParams(-1, dp(48)));
+        content.addView(home, new FrameLayout.LayoutParams(-1, -1));
+        renderWorkspaceState();
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -194,11 +191,10 @@ public final class MainActivity extends Activity {
                 return true;
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) status.setText("Connection lost · start the engine in Termux, then reload");
+                if (request.isForMainFrame()) status.setText("Connection lost. Use Menu to reload the editor.");
             }
             @Override public void onPageFinished(WebView view, String url) {
                 CookieManager.getInstance().flush();
-                probeEngine(null);
             }
         });
         editor.setWebChromeClient(new WebChromeClient() {
@@ -265,109 +261,97 @@ public final class MainActivity extends Activity {
     }
 
     private void showHome() {
+        autoOpen = false;
         inEditor = false;
         home.setVisibility(View.VISIBLE);
         editor.setVisibility(View.GONE);
         ((View) shortcuts.getParent()).setVisibility(View.GONE);
     }
 
-    private void openWorkspace() {
-        probeEngine(() -> {
-            inEditor = true;
-            home.setVisibility(View.GONE);
-            editor.setVisibility(View.VISIBLE);
-            ((View) shortcuts.getParent()).setVisibility(View.VISIBLE);
-            if (editor.getUrl() == null) editor.loadUrl(ENGINE);
-            editor.requestFocus();
-        });
-    }
-
-    private void probeEngine(Runnable whenReady) {
-        if (probing && whenReady == null) return;
-        probing = true;
-        io.execute(() -> {
-            boolean ready = false;
-            HttpURLConnection connection = null;
-            try {
-                connection = (HttpURLConnection) new URL(ENGINE + "/healthz").openConnection();
-                connection.setConnectTimeout(1400);
-                connection.setReadTimeout(1400);
-                connection.setInstanceFollowRedirects(false);
-                if (connection.getResponseCode() == 200) {
-                    try (InputStream stream = connection.getInputStream()) {
-                        String body = new String(readBytes(stream, 8192), StandardCharsets.UTF_8);
-                        ready = body.contains("\"status\"") && (body.contains("alive") || body.contains("expired"));
-                    }
-                }
-            } catch (Exception ignored) { /* A missing engine is an onboarding state. */ }
-            finally { if (connection != null) connection.disconnect(); }
-            final boolean available = ready;
-            handler.post(() -> {
-                probing = false;
-                if (isFinishing() || isDestroyed()) return;
-                status.setText(available ? "● Local engine connected · 127.0.0.1:8765" : "○ Local engine offline · open Termux to start it");
-                status.setTextColor(available ? ACCENT : MUTED);
-                if (available && whenReady != null) whenReady.run();
-                else if (whenReady != null) new AlertDialog.Builder(this).setTitle("Start your local engine")
-                        .setMessage("Complete the setup steps, or choose Start installed engine. The editor runs on this tablet and needs Termux to stay running.")
-                        .setPositiveButton("Open Termux", (d, w) -> openTermux()).setNegativeButton("Close", null).show();
-            });
-        });
-    }
-
-    private void installEngine() {
-        try {
-            String payload = Base64.encodeToString(readBytes(getAssets().open("mobiCode-setup.sh"), 100000), Base64.NO_WRAP);
-            runTermux("umask 077; printf %s '" + payload + "' | base64 -d > \"$HOME/.mobicode-install.sh\" && bash \"$HOME/.mobicode-install.sh\"");
-        } catch (Exception e) { toast("The bundled installer is missing. Rebuild the app with tools/package.py."); }
-    }
-
-    private void runTermux(String command) {
-        try { getPackageManager().getPackageInfo("com.termux", 0); }
-        catch (PackageManager.NameNotFoundException e) { toast("Install Termux directly and open it once first."); return; }
-        pendingCommand = command;
-        if (checkSelfPermission(TERMUX_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[] { TERMUX_PERMISSION }, CONTROL_PERMISSION);
-            return;
+    private void requestWorkspace() {
+        autoOpen = true;
+        WorkspaceService.State current = WorkspaceService.state();
+        if (current.phase == WorkspaceService.Phase.READY) {
+            showWorkspace(current);
+        } else if (!current.busy()) {
+            setupButton.setEnabled(false);
+            try { startForegroundService(new Intent(this, WorkspaceService.class)); }
+            catch (RuntimeException error) {
+                setupButton.setEnabled(true);
+                setupDetail.setText("Couldn’t start the workspace. Tap again to retry.");
+            }
         }
-        executeTermuxCommand();
     }
 
-    private void executeTermuxCommand() {
-        if (pendingCommand == null) return;
-        Intent run = new Intent("com.termux.RUN_COMMAND");
-        run.setClassName("com.termux", "com.termux.app.RunCommandService");
-        run.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash");
-        run.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[] { "-c", pendingCommand });
-        run.putExtra("com.termux.RUN_COMMAND_WORKDIR", TERMUX_HOME);
-        run.putExtra("com.termux.RUN_COMMAND_BACKGROUND", false);
-        run.putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0");
-        try { startService(run); openTermux(); }
-        catch (RuntimeException e) { new AlertDialog.Builder(this).setTitle("Termux connection needed")
-                .setMessage("Run the connection command in step 2, then grant mobiCode the Run commands in Termux permission in Android app settings.")
-                .setPositiveButton("App settings", (d, w) -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))))
-                .setNegativeButton("Close", null).show(); }
-        pendingCommand = null;
+    private void renderWorkspaceState() {
+        WorkspaceService.State current = WorkspaceService.state();
+        if (current == observed) return;
+        observed = current;
+        if (current.phase == WorkspaceService.Phase.READY) {
+            status.setText("Workspace ready");
+            status.setTextColor(ACCENT);
+            setupTitle.setText("Workspace ready");
+            setupDetail.setText("Your editor and tools are ready to use.");
+            setupButton.setText("Open workspace");
+            if (autoOpen && editor != null && !inEditor) showWorkspace(current);
+        } else {
+            if (inEditor) showHome();
+            activeUrl = null;
+            status.setText("On-device workspace");
+            status.setTextColor(MUTED);
+            if (current.phase == WorkspaceService.Phase.IDLE) {
+                boolean installed = LinuxWorkspace.isInstalled(this);
+                setupTitle.setText(installed ? "Open your workspace" : "Set up your workspace");
+                setupDetail.setText(installed ? "Your editor and coding tools are installed." :
+                        "Download the editor, terminal, Git, C++, Java and Python in one setup. Use Wi‑Fi for several hundred MB of downloads and keep about 2 GB free. Once installed, you can code offline.");
+                setupButton.setText(installed ? "Open workspace" : "Download and set up");
+            } else {
+                setupTitle.setText(current.title);
+                setupDetail.setText(current.detail.isEmpty() ? "mobiCode will open the editor when setup finishes." : current.detail);
+                setupButton.setText("Try again");
+            }
+        }
+        setupButton.setEnabled(!current.busy());
+        workspaceButton.setVisibility(current.phase == WorkspaceService.Phase.READY ? View.VISIBLE : View.GONE);
+        setupButton.setVisibility(current.busy() ? View.GONE : View.VISIBLE);
+        stopSetup.setVisibility(current.busy() ? View.VISIBLE : View.GONE);
+        progress.setVisibility(current.busy() ? View.VISIBLE : View.GONE);
+        progress.setIndeterminate(current.percent < 0);
+        if (current.percent >= 0) progress.setProgress(current.percent);
     }
 
-    @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
-        super.onRequestPermissionsResult(request, permissions, results);
-        if (request == CONTROL_PERMISSION && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) executeTermuxCommand();
-        else if (request == CONTROL_PERMISSION) { pendingCommand = null; toast("Termux control was not granted. You can export and run the setup script manually from Menu."); }
+    private void showWorkspace(WorkspaceService.State session) {
+        if (isFinishing() || isDestroyed()) return;
+        inEditor = true;
+        home.setVisibility(View.GONE);
+        editor.setVisibility(View.VISIBLE);
+        ((View) shortcuts.getParent()).setVisibility(View.VISIBLE);
+        if (!session.url.equals(activeUrl)) {
+            activeUrl = session.url;
+            CookieManager.getInstance().setCookie(session.url, session.cookie, set -> {
+                if (!isDestroyed() && session.url.equals(activeUrl)) {
+                    if (Boolean.TRUE.equals(set)) editor.loadUrl(session.url);
+                    else status.setText("Couldn’t connect the editor session. Reopen mobiCode.");
+                }
+            });
+        }
+    }
+
+    private void stopWorkspace() {
+        autoOpen = false;
+        stopService(new Intent(this, WorkspaceService.class));
+        showHome();
     }
 
     private void showMenu() {
-        String[] entries = { "Engine setup", "Open workspace in browser", "Copy workspace address", "Export setup script", "Reload editor", "About mobiCode" };
+        String[] entries = { "Setup and status", "Reload editor", "Stop workspace", "About mobiCode" };
         new AlertDialog.Builder(this).setItems(entries, (d, selected) -> {
             switch (selected) {
                 case 0 -> showHome();
-                case 1 -> external(ENGINE);
-                case 2 -> copy("Workspace", ENGINE);
-                case 3 -> startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-                        .setType("text/plain").putExtra(Intent.EXTRA_TITLE, "mobiCode-setup.sh"), EXPORT);
-                case 4 -> { if (inEditor) editor.reload(); }
-                case 5 -> new AlertDialog.Builder(this).setTitle("mobiCode " + BuildConfig.VERSION_NAME)
-                        .setMessage("Open-source tablet coding workspace by Limuwani Nethananni.\n\nPowered by code-server and Termux, installed separately. Not affiliated with Microsoft.\n\nAI is optional and uses your chosen provider. This alpha still needs testing on your tablet.")
+                case 1 -> { if (inEditor) editor.reload(); else requestWorkspace(); }
+                case 2 -> stopWorkspace();
+                case 3 -> new AlertDialog.Builder(this).setTitle("mobiCode " + BuildConfig.VERSION_NAME)
+                        .setMessage("Open-source Android coding workspace by Limuwani Nethananni.\n\nThe editor and language tools run on your device. AI is optional and uses your chosen provider.")
                         .setPositiveButton("Close", null).show();
                 default -> { }
             }
@@ -380,7 +364,7 @@ public final class MainActivity extends Activity {
             uploadCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
             uploadCallback = null;
         }
-        if ((request == EXPORT || request == DOWNLOAD) && result == RESULT_OK && data != null && data.getData() != null) {
+        if (request == DOWNLOAD && result == RESULT_OK && data != null && data.getData() != null) {
             final Uri destination = data.getData();
             final String url = pendingDownload, cookie = pendingCookie, userAgent = pendingUserAgent;
             pendingDownload = pendingCookie = pendingUserAgent = null;
@@ -388,19 +372,15 @@ public final class MainActivity extends Activity {
                 HttpURLConnection connection = null;
                 try (OutputStream output = getContentResolver().openOutputStream(destination)) {
                     if (output == null) throw new IllegalStateException("Destination unavailable");
-                    if (request == EXPORT) {
-                        try (InputStream input = getAssets().open("mobiCode-setup.sh")) { copyStream(input, output); }
-                    } else {
-                        if (url == null || !localEngineUrl(Uri.parse(url))) throw new IllegalArgumentException("Not a workspace download");
-                        connection = (HttpURLConnection) new URL(url).openConnection();
-                        connection.setConnectTimeout(10000);
-                        connection.setReadTimeout(60000);
-                        connection.setInstanceFollowRedirects(false);
-                        if (cookie != null) connection.setRequestProperty("Cookie", cookie);
-                        if (userAgent != null) connection.setRequestProperty("User-Agent", userAgent);
-                        if (connection.getResponseCode() != 200) throw new IllegalStateException("Download failed");
-                        try (InputStream input = connection.getInputStream()) { copyStream(input, output); }
-                    }
+                    if (url == null || !localEngineUrl(Uri.parse(url))) throw new IllegalArgumentException("Not a workspace download");
+                    connection = (HttpURLConnection) new URL(url).openConnection(java.net.Proxy.NO_PROXY);
+                    connection.setConnectTimeout(10000);
+                    connection.setReadTimeout(60000);
+                    connection.setInstanceFollowRedirects(false);
+                    if (cookie != null) connection.setRequestProperty("Cookie", cookie);
+                    if (userAgent != null) connection.setRequestProperty("User-Agent", userAgent);
+                    if (connection.getResponseCode() != 200) throw new IllegalStateException("Download failed");
+                    try (InputStream input = connection.getInputStream()) { copyStream(input, output); }
                     handler.post(() -> toast("Saved."));
                 } catch (Exception e) { handler.post(() -> toast("Could not save the file. Check the destination and engine connection.")); }
                 finally { if (connection != null) connection.disconnect(); }
@@ -409,25 +389,13 @@ public final class MainActivity extends Activity {
     }
 
     private boolean localEngineUrl(Uri uri) {
-        return "http".equals(uri.getScheme()) && "127.0.0.1".equals(uri.getHost()) && uri.getPort() == 8765;
+        WorkspaceService.State current = WorkspaceService.state();
+        return current.phase == WorkspaceService.Phase.READY && "http".equals(uri.getScheme())
+                && "127.0.0.1".equals(uri.getHost()) && uri.getPort() == Uri.parse(current.url).getPort();
     }
     private void external(String url) {
         try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
         catch (RuntimeException e) { toast("No browser is available to open this link."); }
-    }
-    private void openTermux() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage("com.termux");
-        if (launch != null) startActivity(launch); else toast("Install Termux directly on the tablet first.");
-    }
-    private static String controlCommand() {
-        return "mkdir -p \"$HOME/.termux\"\n" +
-                "if grep -q '^[[:space:]]*allow-external-apps[[:space:]]*=' \"$HOME/.termux/termux.properties\" 2>/dev/null; then\n" +
-                "  sed -i 's/^[[:space:]]*allow-external-apps[[:space:]]*=.*/allow-external-apps = true/' \"$HOME/.termux/termux.properties\"\n" +
-                "else\n  printf '\\nallow-external-apps = true\\n' >> \"$HOME/.termux/termux.properties\"\nfi\ntermux-reload-settings\n";
-    }
-    private void copy(String label, String value) {
-        ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText(label, value));
-        toast("Copied. Paste it into Termux.");
     }
     private Button button(String label, View.OnClickListener listener) {
         Button button = new Button(this);
@@ -455,19 +423,15 @@ public final class MainActivity extends Activity {
         int read;
         while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
     }
-    private static byte[] readBytes(InputStream input, int limit) throws Exception {
-        try (InputStream stream = input; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[4096];
-            int read, total = 0;
-            while ((read = stream.read(buffer)) != -1) {
-                total += read;
-                if (total > limit) throw new IllegalArgumentException("Input too large");
-                output.write(buffer, 0, read);
-            }
-            return output.toByteArray();
+    @Override protected void onResume() {
+        super.onResume();
+        resumed = true;
+        handler.post(poll);
+        if (!autoStarted && LinuxWorkspace.isInstalled(this) && WorkspaceService.state().phase == WorkspaceService.Phase.IDLE) {
+            autoStarted = true;
+            requestWorkspace();
         }
     }
-    @Override protected void onResume() { super.onResume(); resumed = true; handler.post(poll); }
     @Override protected void onPause() { resumed = false; handler.removeCallbacks(poll); CookieManager.getInstance().flush(); super.onPause(); }
     @Override public void onBackPressed() { if (inEditor) showHome(); else super.onBackPressed(); }
     @Override protected void onDestroy() {

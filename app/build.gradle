@@ -8,7 +8,8 @@ android {
         minSdk 26
         targetSdk 35
         versionCode providers.gradleProperty('ciVersionCode').getOrElse('1').toInteger()
-        versionName providers.gradleProperty('ciVersionName').getOrElse('0.1.0-alpha.1')
+        versionName providers.gradleProperty('ciVersionName').getOrElse('0.2.0-alpha.1')
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
     }
     buildFeatures { buildConfig true }
     compileOptions {
@@ -18,5 +19,13 @@ android {
     buildTypes {
         release { minifyEnabled false }
     }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += ['**/*.so']
+        }
+    }
     lint { abortOnError true }
 }
+
+dependencies { implementation 'org.apache.commons:commons-compress:1.28.0' }

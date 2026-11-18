@@ -95,7 +95,7 @@ async function requestCompletion({ base, key, model, messages, tools, signal, fe
   return { role: 'assistant', content: message.content || null, ...(message.tool_calls ? { tool_calls: message.tool_calls } : {}) };
 }
 
-/** A reviewed command has the same permissions as the Termux user; it is not an OS sandbox. */
+/** A reviewed command runs with the coding workspace's permissions. */
 function runCommand(command, cwd, signal, timeoutMs = 30000) {
   if (typeof command !== 'string' || !command.trim() || command.length > 8000) throw new Error('Command must be 1–8000 characters.');
   if (signal?.aborted) return Promise.reject(new Error('Stopped.'));
