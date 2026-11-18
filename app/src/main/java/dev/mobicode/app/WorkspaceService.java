@@ -59,7 +59,6 @@ public final class WorkspaceService extends Service {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile Process editor;
     private volatile boolean stopping;
-    private long lastNotification;
 
     static State state() { return state; }
 
@@ -74,7 +73,7 @@ public final class WorkspaceService extends Service {
         state = new State(Phase.STARTING, "Starting workspace", "", -1, null, null);
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel(CHANNEL, "mobiCode workspace", NotificationManager.IMPORTANCE_LOW));
-        Notification first = notification(state);
+        Notification first = notification();
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION, first, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         } else if (Build.VERSION.SDK_INT >= 29) {
@@ -200,24 +199,16 @@ public final class WorkspaceService extends Service {
         if (BuildConfig.DEBUG) Log.d(TAG, line);
     }
 
-    private synchronized void publish(State update) {
-        if (stopping) return;
-        State previous = state;
-        state = update;
-        long now = SystemClock.elapsedRealtime();
-        // Android 13+ shows the service in its task manager without a notification prompt.
-        if (Build.VERSION.SDK_INT < 33 && (previous.phase != update.phase || now - lastNotification >= 1000)) {
-            lastNotification = now;
-            getSystemService(NotificationManager.class).notify(NOTIFICATION, notification(update));
-        }
+    private void publish(State update) {
+        if (!stopping) state = update;
     }
 
-    private Notification notification(State update) {
+    private Notification notification() {
         PendingIntent open = PendingIntent.getActivity(this, 1, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop = PendingIntent.getService(this, 2, new Intent(this, WorkspaceService.class).setAction(STOP), PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download_done)
-                .setContentTitle("mobiCode").setContentText(update.title).setOnlyAlertOnce(true).setOngoing(true)
-                .setContentIntent(open).setProgress(100, Math.max(0, update.percent), update.busy() && update.percent < 0)
+                .setContentTitle("mobiCode").setContentText("Local coding workspace").setOnlyAlertOnce(true).setOngoing(true)
+                .setContentIntent(open)
                 .addAction(new Notification.Action.Builder(null, "Stop", stop).build()).build();
     }
 
