@@ -50,26 +50,16 @@ def inspect_editor(port):
     adb('forward', 'tcp:16543', f'tcp:{port}')
     with urllib.request.urlopen('http://127.0.0.1:16543/healthz', timeout=15) as response:
         assert json.load(response)['status'] in ('alive', 'expired')
-    pid = adb('shell', 'pidof', PACKAGE).split()[0]
-    adb('forward', 'tcp:16544', f'localabstract:webview_devtools_remote_{pid}')
     for _ in range(50):
-        try:
-            with urllib.request.urlopen('http://127.0.0.1:16544/json/list', timeout=5) as response:
-                targets = json.load(response)
-            for page in targets:
-                if page['url'].startswith(f'http://127.0.0.1:{port}/') and '/login' not in page['url']:
-                    title = page.get('title', '')
-                    if title and '127.0.0.1' not in title:
-                        print(f'Opened signed-in WebView editor: {title}')
-                        return
-        except (OSError, ValueError):
-            pass
+        if 'Workspace editor rendered' in adb('logcat', '-d', '-s', 'mobiCode'):
+            print('GeckoView rendered the signed-in editor.')
+            return
         time.sleep(2)
-    raise RuntimeError('The editor started, but the WebView did not open the signed-in workspace.')
+    raise RuntimeError('The local server started, but the signed-in editor did not render.')
 
 
 def main():
-    adb('install', '-t', 'dist/mobiCode.apk')
+    adb('install', '-t', 'dist/mobiCode-x86_64.apk')
     adb('logcat', '-c')
     adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/.MainActivity')
     adb('shell', 'input', 'tap', *find_setup_button())
@@ -82,5 +72,5 @@ if __name__ == '__main__':
     try:
         main()
     except Exception:
-        print(adb('logcat', '-d', '-s', 'mobiCode', 'AndroidRuntime', 'chromium')[-24000:])
+        print(adb('logcat', '-d', '-s', 'mobiCode', 'AndroidRuntime', 'GeckoConsole', 'GeckoView')[-24000:])
         raise

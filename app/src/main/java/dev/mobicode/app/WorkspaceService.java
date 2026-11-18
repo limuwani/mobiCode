@@ -39,16 +39,16 @@ public final class WorkspaceService extends Service {
 
     static final class State {
         final Phase phase;
-        final String title, detail, url, cookie;
+        final String title, detail, url, password;
         final int percent;
 
-        State(Phase phase, String title, String detail, int percent, String url, String cookie) {
+        State(Phase phase, String title, String detail, int percent, String url, String password) {
             this.phase = phase;
             this.title = title;
             this.detail = detail;
             this.percent = percent;
             this.url = url;
-            this.cookie = cookie;
+            this.password = password;
         }
 
         boolean busy() { return phase == Phase.DOWNLOADING || phase == Phase.INSTALLING || phase == Phase.STARTING; }
@@ -106,8 +106,8 @@ public final class WorkspaceService extends Service {
             Thread log = new Thread(() -> drainEditorLog(process), "mobiCode editor log");
             log.setDaemon(true);
             log.start();
-            String cookie = waitForEditor(process, url, password);
-            publish(new State(Phase.READY, "Workspace ready", "", -1, url, cookie));
+            waitForEditor(process, url, password);
+            publish(new State(Phase.READY, "Workspace ready", "", -1, url, password));
             if (BuildConfig.DEBUG) Log.i(TAG, "Workspace ready on port " + port);
             int code = process.waitFor();
             if (!stopping) throw new IOException("The editor closed (" + code + "). Tap Try again to reopen it.");
@@ -138,11 +138,14 @@ public final class WorkspaceService extends Service {
         } catch (IOException ignored) { }
     }
 
-    private static String waitForEditor(Process process, String baseUrl, String password) throws Exception {
+    private static void waitForEditor(Process process, String baseUrl, String password) throws Exception {
         long deadline = SystemClock.elapsedRealtime() + 120000;
         while (SystemClock.elapsedRealtime() < deadline) {
             if (!process.isAlive()) throw new IOException("The local editor stopped during startup. Tap Try again.");
-            if (isHealthy(baseUrl)) return signIn(baseUrl, password);
+            if (isHealthy(baseUrl)) {
+                signIn(baseUrl, password);
+                return;
+            }
             Thread.sleep(500);
         }
         throw new IOException("The editor took too long to open. Tap Try again.");
@@ -157,7 +160,7 @@ public final class WorkspaceService extends Service {
         finally { if (connection != null) connection.disconnect(); }
     }
 
-    private static String signIn(String url, String password) throws IOException {
+    private static void signIn(String url, String password) throws IOException {
         HttpURLConnection connection = connection(url + "/login");
         try {
             byte[] form = ("password=" + password + "&base=%2F").getBytes(StandardCharsets.UTF_8);
@@ -169,7 +172,6 @@ public final class WorkspaceService extends Service {
             int result = connection.getResponseCode();
             String cookie = connection.getHeaderField("Set-Cookie");
             if (result < 300 || result >= 400 || cookie == null) throw new IOException("Could not connect to the local editor session.");
-            return cookie;
         } finally { connection.disconnect(); }
     }
 

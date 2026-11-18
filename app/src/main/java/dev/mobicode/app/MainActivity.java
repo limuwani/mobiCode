@@ -1,6 +1,5 @@
 package dev.mobicode.app;
 
-import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -13,20 +12,13 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
-import android.webkit.CookieManager;
 import android.webkit.URLUtil;
-import android.webkit.ValueCallback;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceError;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -37,10 +29,17 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.mozilla.geckoview.AllowOrDeny;
+import org.mozilla.geckoview.GeckoResult;
+import org.mozilla.geckoview.GeckoRuntime;
+import org.mozilla.geckoview.GeckoSession;
+import org.mozilla.geckoview.GeckoView;
+import org.mozilla.geckoview.WebRequestError;
+import org.mozilla.geckoview.WebResponse;
+
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -52,7 +51,9 @@ public final class MainActivity extends Activity {
     private static final int ACCENT = Color.rgb(56, 216, 190);
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
-    private WebView editor;
+    private static GeckoRuntime browserRuntime;
+    private GeckoView editor;
+    private GeckoSession editorSession;
     private LinearLayout root, shortcuts;
     private FrameLayout content;
     private ScrollView home;
@@ -60,9 +61,11 @@ public final class MainActivity extends Activity {
     private Button setupButton, stopSetup, workspaceButton;
     private ProgressBar progress;
     private boolean inEditor, resumed, autoOpen = true, autoStarted;
-    private String activeUrl, pendingDownload, pendingCookie, pendingUserAgent;
+    private String activeUrl;
+    private InputStream pendingDownload;
+    private GeckoSession.PromptDelegate.FilePrompt filePrompt;
+    private GeckoResult<GeckoSession.PromptDelegate.PromptResponse> filePicker;
     private WorkspaceService.State observed;
-    private ValueCallback<Uri[]> uploadCallback;
 
     private final Runnable poll = new Runnable() {
         @Override public void run() {
@@ -166,59 +169,85 @@ public final class MainActivity extends Activity {
         renderWorkspaceState();
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     private void buildEditor() {
-        editor = new WebView(this);
+        editor = new GeckoView(this);
         editor.setBackgroundColor(BG);
-        WebSettings settings = editor.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(true); // Only files selected with Android's document picker.
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setSupportMultipleWindows(false);
-        settings.setBuiltInZoomControls(false);
-        settings.setTextZoom(100);
-        CookieManager.getInstance().setAcceptCookie(true);
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
-        // Deliberately no JavaScript-to-native bridge is exposed to the editor or extensions.
-        editor.setWebViewClient(new WebViewClient() {
-            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                if (!request.isForMainFrame()) return false;
-                Uri uri = request.getUrl();
-                if (localEngineUrl(uri)) return false;
-                if ("https".equals(uri.getScheme()) || "http".equals(uri.getScheme())) external(uri.toString());
-                return true;
-            }
-            @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) status.setText("Connection lost. Use Menu to reload the editor.");
-            }
-            @Override public void onPageFinished(WebView view, String url) {
-                CookieManager.getInstance().flush();
-            }
-        });
-        editor.setWebChromeClient(new WebChromeClient() {
-            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
-                if (uploadCallback != null) uploadCallback.onReceiveValue(null);
-                uploadCallback = callback;
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
-                try { startActivityForResult(intent, UPLOAD); }
-                catch (RuntimeException e) { uploadCallback.onReceiveValue(null); uploadCallback = null; toast("No document picker is available."); }
-                return true;
-            }
-        });
-        editor.setDownloadListener((url, agent, disposition, mime, length) -> {
-            if (!localEngineUrl(Uri.parse(url))) { toast("This download needs an external browser."); return; }
-            pendingDownload = url;
-            pendingCookie = CookieManager.getInstance().getCookie(url);
-            pendingUserAgent = agent;
-            Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-                    .setType(mime == null ? "application/octet-stream" : mime)
-                    .putExtra(Intent.EXTRA_TITLE, URLUtil.guessFileName(url, disposition, mime));
-            startActivityForResult(save, DOWNLOAD);
-        });
         content.addView(editor, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void openEditorSession() {
+        if (editorSession != null) return;
+        if (browserRuntime == null) browserRuntime = GeckoRuntime.create(getApplicationContext());
+        editorSession = new GeckoSession();
+        editorSession.setNavigationDelegate(new GeckoSession.NavigationDelegate() {
+            @Override public GeckoResult<AllowOrDeny> onLoadRequest(GeckoSession session, LoadRequest request) {
+                Uri uri = Uri.parse(request.uri);
+                if (localEngineUrl(uri) || ("data".equals(uri.getScheme()) && request.isDirectNavigation)) {
+                    return GeckoResult.fromValue(AllowOrDeny.ALLOW);
+                }
+                if (request.hasUserGesture && ("https".equals(uri.getScheme()) || "http".equals(uri.getScheme()))) {
+                    external(request.uri);
+                }
+                return GeckoResult.fromValue(AllowOrDeny.DENY);
+            }
+
+            @Override public GeckoResult<String> onLoadError(GeckoSession session, String url, WebRequestError error) {
+                status.setText("Connection lost. Use Menu to reload the editor.");
+                if (BuildConfig.DEBUG) Log.w("mobiCode", "Editor page load failed: " + error.code);
+                return null;
+            }
+        });
+        editorSession.setContentDelegate(new GeckoSession.ContentDelegate() {
+            @Override public void onTitleChange(GeckoSession session, String title) {
+                if (BuildConfig.DEBUG && title != null && title.contains("mobiCode")) {
+                    Log.i("mobiCode", "Workspace editor rendered");
+                }
+            }
+
+            @Override public void onExternalResponse(GeckoSession session, WebResponse download) {
+                Uri origin = Uri.parse(download.uri);
+                if (download.body == null) return;
+                if (!localEngineUrl(origin) && (activeUrl == null || !download.uri.startsWith("blob:" + activeUrl + "/"))) {
+                    closeStream(download.body);
+                    return;
+                }
+                closeStream(pendingDownload);
+                pendingDownload = download.body;
+                String mimeType = download.headers.get("Content-Type");
+                try {
+                    startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType(mimeType == null ? "application/octet-stream" : mimeType.split(";", 2)[0])
+                            .putExtra(Intent.EXTRA_TITLE, URLUtil.guessFileName(download.uri, download.headers.get("Content-Disposition"), mimeType)), DOWNLOAD);
+                } catch (RuntimeException error) {
+                    closeStream(pendingDownload);
+                    pendingDownload = null;
+                    toast("Couldn’t open the file picker.");
+                }
+            }
+        });
+        editorSession.setPromptDelegate(new GeckoSession.PromptDelegate() {
+            @Override public GeckoResult<PromptResponse> onFilePrompt(GeckoSession session, FilePrompt prompt) {
+                if (filePicker != null) filePicker.complete(filePrompt.dismiss());
+                filePrompt = prompt;
+                GeckoResult<PromptResponse> response = new GeckoResult<>();
+                filePicker = response;
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                        .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, prompt.type == FilePrompt.Type.MULTIPLE);
+                if (prompt.mimeTypes != null) intent.putExtra(Intent.EXTRA_MIME_TYPES, prompt.mimeTypes);
+                try { startActivityForResult(intent, UPLOAD); }
+                catch (RuntimeException error) {
+                    response.complete(prompt.dismiss());
+                    filePicker = null;
+                    filePrompt = null;
+                    toast("Couldn’t open the file picker.");
+                }
+                return response;
+            }
+        });
+        editorSession.open(browserRuntime);
+        editor.setSession(editorSession);
     }
 
     private void buildShortcuts() {
@@ -327,13 +356,16 @@ public final class MainActivity extends Activity {
         editor.setVisibility(View.VISIBLE);
         ((View) shortcuts.getParent()).setVisibility(View.VISIBLE);
         if (!session.url.equals(activeUrl)) {
+            openEditorSession();
             activeUrl = session.url;
-            CookieManager.getInstance().setCookie(session.url, session.cookie, set -> {
-                if (!isDestroyed() && session.url.equals(activeUrl)) {
-                    if (Boolean.TRUE.equals(set)) editor.loadUrl(session.url);
-                    else status.setText("Couldn’t connect the editor session. Reopen mobiCode.");
-                }
-            });
+            // Open the authenticated session through the renderer's own cookie store.
+            String form = "<!doctype html><meta charset=utf-8>"
+                    + "<meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; script-src 'unsafe-inline'; form-action " + session.url + "\">"
+                    + "<form id='login' method='post' action='" + session.url + "/login'>"
+                    + "<input type='hidden' name='password' value='" + session.password + "'>"
+                    + "<input type='hidden' name='base' value='/'>"
+                    + "</form><script>document.getElementById('login').submit()</script>";
+            editorSession.load(new GeckoSession.Loader().data(form, "text/html").flags(GeckoSession.LOAD_FLAGS_REPLACE_HISTORY));
         }
     }
 
@@ -348,7 +380,11 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setItems(entries, (d, selected) -> {
             switch (selected) {
                 case 0 -> showHome();
-                case 1 -> { if (inEditor) editor.reload(); else requestWorkspace(); }
+                case 1 -> {
+                    if (inEditor && editorSession != null) editorSession.reload();
+                    else if (LinuxWorkspace.isInstalled(this)) requestWorkspace();
+                    else showHome();
+                }
                 case 2 -> stopWorkspace();
                 case 3 -> new AlertDialog.Builder(this).setTitle("mobiCode " + BuildConfig.VERSION_NAME)
                         .setMessage("Open-source Android coding workspace by Limuwani Nethananni.\n\nThe editor and language tools run on your device. AI is optional and uses your chosen provider.")
@@ -360,32 +396,46 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request == UPLOAD && uploadCallback != null) {
-            uploadCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
-            uploadCallback = null;
+        if (request == UPLOAD && filePicker != null) {
+            if (result != RESULT_OK || data == null) {
+                filePicker.complete(filePrompt.dismiss());
+            } else if (data.getClipData() != null) {
+                android.content.ClipData selection = data.getClipData();
+                Uri[] files = new Uri[selection.getItemCount()];
+                for (int i = 0; i < files.length; i++) files[i] = selection.getItemAt(i).getUri();
+                filePicker.complete(filePrompt.confirm(this, files));
+            } else if (data.getData() != null) {
+                filePicker.complete(filePrompt.confirm(this, data.getData()));
+            } else {
+                filePicker.complete(filePrompt.dismiss());
+            }
+            filePicker = null;
+            filePrompt = null;
         }
-        if (request == DOWNLOAD && result == RESULT_OK && data != null && data.getData() != null) {
-            final Uri destination = data.getData();
-            final String url = pendingDownload, cookie = pendingCookie, userAgent = pendingUserAgent;
-            pendingDownload = pendingCookie = pendingUserAgent = null;
+        if (request == DOWNLOAD && pendingDownload != null) {
+            InputStream download = pendingDownload;
+            pendingDownload = null;
+            if (result != RESULT_OK || data == null || data.getData() == null) {
+                closeStream(download);
+                return;
+            }
+            Uri destination = data.getData();
             io.execute(() -> {
-                HttpURLConnection connection = null;
-                try (OutputStream output = getContentResolver().openOutputStream(destination)) {
-                    if (output == null) throw new IllegalStateException("Destination unavailable");
-                    if (url == null || !localEngineUrl(Uri.parse(url))) throw new IllegalArgumentException("Not a workspace download");
-                    connection = (HttpURLConnection) new URL(url).openConnection(java.net.Proxy.NO_PROXY);
-                    connection.setConnectTimeout(10000);
-                    connection.setReadTimeout(60000);
-                    connection.setInstanceFollowRedirects(false);
-                    if (cookie != null) connection.setRequestProperty("Cookie", cookie);
-                    if (userAgent != null) connection.setRequestProperty("User-Agent", userAgent);
-                    if (connection.getResponseCode() != 200) throw new IllegalStateException("Download failed");
-                    try (InputStream input = connection.getInputStream()) { copyStream(input, output); }
+                try (InputStream input = download; OutputStream output = getContentResolver().openOutputStream(destination)) {
+                    if (output == null) throw new IOException("Destination unavailable");
+                    copyStream(input, output);
                     handler.post(() -> toast("Saved."));
-                } catch (Exception e) { handler.post(() -> toast("Could not save the file. Check the destination and engine connection.")); }
-                finally { if (connection != null) connection.disconnect(); }
+                } catch (IOException error) {
+                    handler.post(() -> toast("Couldn’t save this file."));
+                }
             });
-        } else if (request == DOWNLOAD) pendingDownload = pendingCookie = pendingUserAgent = null;
+        }
+    }
+
+    private static void closeStream(InputStream stream) {
+        if (stream != null) {
+            try { stream.close(); } catch (IOException ignored) { }
+        }
     }
 
     private boolean localEngineUrl(Uri uri) {
@@ -418,7 +468,7 @@ public final class MainActivity extends Activity {
     }
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
     private void toast(String value) { Toast.makeText(this, value, Toast.LENGTH_LONG).show(); }
-    private static void copyStream(InputStream input, OutputStream output) throws Exception {
+    private static void copyStream(InputStream input, OutputStream output) throws IOException {
         byte[] buffer = new byte[16384];
         int read;
         while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
@@ -432,13 +482,17 @@ public final class MainActivity extends Activity {
             requestWorkspace();
         }
     }
-    @Override protected void onPause() { resumed = false; handler.removeCallbacks(poll); CookieManager.getInstance().flush(); super.onPause(); }
+    @Override protected void onPause() { resumed = false; handler.removeCallbacks(poll); super.onPause(); }
     @Override public void onBackPressed() { if (inEditor) showHome(); else super.onBackPressed(); }
     @Override protected void onDestroy() {
         resumed = false;
         handler.removeCallbacksAndMessages(null);
-        if (uploadCallback != null) uploadCallback.onReceiveValue(null);
-        editor.destroy();
+        if (filePicker != null) filePicker.complete(filePrompt.dismiss());
+        if (editorSession != null) {
+            editor.releaseSession();
+            editorSession.close();
+        }
+        closeStream(pendingDownload);
         io.shutdownNow();
         super.onDestroy();
     }

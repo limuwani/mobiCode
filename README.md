@@ -15,8 +15,9 @@ with the Huawei MatePad 11.5 PaperMatte in mind.
    and C++, Java, Python and Git tools, then opens your first project.
 
 Use Wi-Fi for the initial download and leave about 2 GB of storage free.
-Installed tools work offline. Android arm64 and x86_64 are supported by the
-APK. Test builds use development signing. If you have the 0.1 alpha and Android
+Installed tools work offline. The main APK is for arm64 tablets and phones.
+The separate x86_64 APK is for x86 devices and emulators. Test builds use
+development signing. If you have the 0.1 alpha and Android
 reports a signature conflict, uninstall that preview before installing 0.2.
 [Setup details and troubleshooting](docs/GETTING_STARTED.md)
 
@@ -35,7 +36,7 @@ AI service costs are separate. Local tools work without an AI account.
 
 ## Build from source
 
-Use JDK 17, Android SDK 35, Python 3 and Node 22. Run the packaging steps on
+Use JDK 17, Android SDK 37.2, Python 3 and Node 22. Run the packaging steps on
 Linux or WSL before opening the project in Android Studio.
 
 ```sh
@@ -46,7 +47,7 @@ node --test agent/test/*.test.js
 ./gradlew :app:assembleDebug :app:lintDebug
 ```
 
-The APK is at `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions builds
+The APKs are in `app/build/outputs/apk/debug/`. GitHub Actions builds
 the APK, runs a first-launch test on Android 12 and publishes passing alphas.
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [the architecture](docs/ARCHITECTURE.md).
 

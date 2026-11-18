@@ -15,5 +15,8 @@ Upstream build recipes come from the pinned
 [Termux package source](https://github.com/termux/termux-packages/tree/84e2a370eb92898242d4ef956f22931280131460).
 
 Archive extraction uses [Apache Commons Compress 1.28.0](https://commons.apache.org/proper/commons-compress/)
-under Apache-2.0. Ubuntu, code-server, and language packages are downloaded from
+under Apache-2.0. The APK includes GeckoView 160.0.20261116130455 under the
+[Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/). See the matching
+[GeckoView source](https://hg.mozilla.org/releases/mozilla-release/rev/b1145b0710192f716be5f59f5b2dfeed650d5294).
+Ubuntu, code-server, and language packages are downloaded from
 their upstream distributors during setup and keep their own licences.

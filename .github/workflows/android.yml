@@ -30,7 +30,7 @@ jobs:
         with:
           packages: 'platform-tools'
       - name: Install Android SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+        run: sdkmanager 'platforms;android-37.2' 'build-tools;36.0.0'
       - name: Package engine and agent
         run: |
           python3 tools/native_runtime.py
@@ -48,10 +48,12 @@ jobs:
           ./gradlew --no-daemon :app:assembleDebug :app:lintDebug \
             -PciVersionCode="${GITHUB_RUN_NUMBER}" \
             -PciVersionName="0.2.0-alpha.${GITHUB_RUN_NUMBER}"
-          cp app/build/outputs/apk/debug/app-debug.apk dist/mobiCode.apk
+          cp app/build/outputs/apk/debug/app-arm64-v8a-debug.apk dist/mobiCode.apk
+          cp app/build/outputs/apk/debug/app-x86_64-debug.apk dist/mobiCode-x86_64.apk
           python3 tools/verify.py dist/mobiCode.apk
+          python3 tools/verify.py dist/mobiCode-x86_64.apk
           cd dist
-          sha256sum mobiCode.apk mobiCode-agent.vsix mobiCode-native-sources.zip > SHA256SUMS
+          sha256sum mobiCode.apk mobiCode-x86_64.apk mobiCode-agent.vsix mobiCode-native-sources.zip > SHA256SUMS
       - name: Enable Android emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -95,4 +97,4 @@ jobs:
             --target "$GITHUB_SHA" --prerelease \
             --title "mobiCode 0.2.0 · alpha ${GITHUB_RUN_NUMBER}" \
             --notes-file docs/ALPHA_RELEASE.md \
-            dist/mobiCode.apk dist/mobiCode-agent.vsix dist/mobiCode-native-sources.zip dist/SHA256SUMS
+            dist/mobiCode.apk dist/mobiCode-x86_64.apk dist/mobiCode-agent.vsix dist/mobiCode-native-sources.zip dist/SHA256SUMS

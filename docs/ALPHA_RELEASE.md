@@ -5,9 +5,11 @@ inside mobiCode. The app prepares its own Ubuntu workspace, installs C++, Java,
 Python and Git, and opens the local editor. Use Wi-Fi for the first download
 and keep about 2 GB free. After setup, the editor and installed tools work offline.
 
-This alpha supports arm64 and x86_64 Android devices. The automated build checks
-a clean installation on an Android 12 emulator. The Huawei MatePad still needs
-a physical device test.
+Use **mobiCode.apk** for arm64 devices such as the MatePad. A separate x86_64 APK
+is available for x86 devices and emulators. The bundled Gecko renderer keeps the
+editor compatible with devices that come with an older Android WebView. The
+automated build checks a clean Android 12 installation. The Huawei MatePad still
+needs a physical device test.
 
 The app includes the terminal, compatible extensions and the configurable AI
 agent. A remote AI provider requires its own configuration and may charge for use.

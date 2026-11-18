@@ -1,6 +1,6 @@
 # Contributing to mobiCode
 
-Use JDK 17, Android SDK 35, Node 22 and Python 3. The project has no npm runtime
+Use JDK 17, Android SDK 37.2, Node 22 and Python 3. The project has no npm runtime
 dependencies. Follow the build commands in the README.
 
 When editing `agent/` or `runtime/`, run `python3 tools/package.py` to regenerate

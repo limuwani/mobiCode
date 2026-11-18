@@ -8,7 +8,7 @@ metadata and installs the language tools inside the workspace.
 
 | Component | Role |
 | --- | --- |
-| Android activity | Setup, WebView editor, touch shortcuts and file picker |
+| Android activity | Setup, GeckoView editor, touch shortcuts and file picker |
 | Workspace service | Resumable setup, progress, editor lifecycle and automatic local sign-in |
 | PRoot and Ubuntu | Local shell, compilers, Git and Linux extension host |
 | code-server | Project workbench, terminal PTYs and extension installation |
@@ -21,9 +21,9 @@ keeps verified stages on retry. Ubuntu's package database remains available
 for future updates.
 
 The editor binds only to Android loopback on a randomly chosen port. A new
-password protects each session and the Android app signs in using the local
-login endpoint, then passes the session cookie to the WebView. The editor has
-no native JavaScript bridge.
+password protects each session. The Android app opens the local login form
+inside its bundled Gecko renderer, which handles the authenticated session.
+The editor has no native JavaScript bridge.
 
 Agent file tools are limited to the open project and reject common credential
 paths. Reviewed shell commands run with the workspace's permissions. Provider
