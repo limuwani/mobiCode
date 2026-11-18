@@ -1,0 +1,25 @@
+{
+  "name": "mobicode-agent",
+  "displayName": "mobiCode Agent",
+  "description": "A provider-configurable coding agent with file diffs and command review for mobiCode.",
+  "version": "0.1.0",
+  "publisher": "mobicode",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "main": "./src/extension.js",
+  "extensionKind": ["workspace"],
+  "activationEvents": ["onView:mobicode.chat"],
+  "capabilities": { "untrustedWorkspaces": { "supported": false } },
+  "contributes": {
+    "commands": [
+      { "command": "mobicode.agent.focus", "title": "mobiCode: Open Agent" },
+      { "command": "mobicode.agent.configure", "title": "mobiCode: Configure AI Provider" },
+      { "command": "mobicode.agent.forgetKey", "title": "mobiCode: Remove AI API Key" }
+    ],
+    "keybindings": [ { "command": "mobicode.agent.focus", "key": "ctrl+alt+a" } ],
+    "viewsContainers": { "activitybar": [ { "id": "mobicode", "title": "mobiCode", "icon": "media/agent.svg" } ] },
+    "views": { "mobicode": [ { "id": "mobicode.chat", "name": "Agent", "type": "webview" } ] }
+  },
+  "scripts": { "test": "node --test test/*.test.js" }
+}
